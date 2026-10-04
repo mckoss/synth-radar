@@ -74,6 +74,7 @@ class RadarCameraPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 call.argument<Int>("width")!!,
                 call.argument<Int>("height")!!,
                 call.argument<Int>("fps")!!,
+                (call.argument<Double>("zoomRatio") ?: 1.0).toFloat(),
             )
             "startRecording" -> c.startRecording(
                 File(call.argument<String>("dir")!!),

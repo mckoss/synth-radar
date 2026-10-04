@@ -96,8 +96,11 @@ def inspect(path: str) -> int:
         if len(phys) > 1:
             problems.append(f"lens switched during recording: {phys}")
     zooms = distinct("zoomRatio")
-    if zooms and zooms != [1.0]:
-        warnings.append(f"zoom ratio not 1.0: {zooms}")
+    requested = video.get("zoomRatio", 1.0)
+    if zooms:
+        print(f"  zoom ratio: requested {requested}, reported {zooms}")
+        if any(abs(z - requested) > 0.01 for z in zooms):
+            problems.append(f"zoom ratio changed or differs from requested {requested}: {zooms}")
     stab = distinct(B.VIDEO_STABILIZATION)
     print(
         f"  video stabilization: {stab}; OIS: {distinct(B.OIS_MODE)}; "

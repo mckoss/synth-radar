@@ -43,6 +43,13 @@ class CameraSummary {
   List<double> get intrinsics => _doubles(raw['intrinsics']);
   List<double> get distortion => _doubles(raw['distortion']);
   String get timestampSource => raw['timestampSource'] as String? ?? 'UNKNOWN';
+
+  /// [min, max] zoom ratio, or [1, 1] if not reported.
+  List<double> get zoomRatioRange {
+    final r = _doubles(raw['zoomRatioRange']);
+    return r.length == 2 ? r : const [1.0, 1.0];
+  }
+
   List<VideoMode> get videoModes => [
     for (final m in (raw['videoModes'] as List? ?? const []))
       VideoMode(m['width'] as int, m['height'] as int, m['fps'] as int),
@@ -88,12 +95,19 @@ class RadarCamera {
         'path': path,
       }))!;
 
-  static Future<PreviewInfo> open(String cameraId, VideoMode mode) async {
+  /// Opens the preview. [zoomRatio] is held fixed for the whole session; on the
+  /// Pixel 10 Pro, 5.0 selects the 5x telephoto lens.
+  static Future<PreviewInfo> open(
+    String cameraId,
+    VideoMode mode, {
+    double zoomRatio = 1.0,
+  }) async {
     final m = await _channel.invokeMapMethod<String, dynamic>('open', {
       'cameraId': cameraId,
       'width': mode.width,
       'height': mode.height,
       'fps': mode.fps,
+      'zoomRatio': zoomRatio,
     });
     return PreviewInfo(m!);
   }

@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit
  * Owns one open camera: a live preview into a Flutter texture, and optional
  * recording of a measurement bundle (MP4 + per-frame metadata + IMU log).
  *
- * Measurement settings: zoom ratio 1.0, electronic video stabilization OFF,
+ * Measurement settings: fixed zoom ratio (1x main lens, or e.g. 5x telephoto), electronic video stabilization OFF,
  * fixed frame rate, and per-frame lens calibration / OIS reporting when supported.
  */
 class CameraController(
@@ -54,6 +54,7 @@ class CameraController(
     var width = 1920; private set
     var height = 1080; private set
     var fps = 30; private set
+    var zoomRatio = 1.0f; private set
 
     private var recording: Recording? = null
     private val sensorLogger = SensorLogger(sensorManager)
@@ -78,13 +79,14 @@ class CameraController(
 
     /** Opens the camera and starts the preview. Returns texture and orientation info. */
     @SuppressLint("MissingPermission")
-    fun open(id: String, width: Int, height: Int, fps: Int): Map<String, Any?> {
+    fun open(id: String, width: Int, height: Int, fps: Int, zoomRatio: Float): Map<String, Any?> {
         close()
         cameraId = id
         characteristics = manager.getCameraCharacteristics(id)
         this.width = width
         this.height = height
         this.fps = fps
+        this.zoomRatio = zoomRatio
         // Texture registration must happen on the platform (main) thread.
         val p = runOnMain { textures.createSurfaceProducer() }
         p.setSize(PREVIEW_W, PREVIEW_H)
@@ -227,6 +229,7 @@ class CameraController(
             .put("video", JSONObject()
                 .put("file", "video.mp4")
                 .put("width", width).put("height", height).put("fps", fps)
+                .put("zoomRatio", zoomRatio.toDouble())
                 .put("mime", rec.writer.videoMime).put("bitrate", rec.writer.videoBitrate)
                 .put("ptsClock", "elapsedRealtime (boot time), microseconds"))
             .put("audio", JSONObject()
@@ -324,7 +327,7 @@ class CameraController(
             )
         }
         if (Build.VERSION.SDK_INT >= 30) {
-            b.set(CaptureRequest.CONTROL_ZOOM_RATIO, 1.0f)
+            b.set(CaptureRequest.CONTROL_ZOOM_RATIO, zoomRatio)
         }
         if (Build.VERSION.SDK_INT >= 31) {
             val oisData = c.get(CameraCharacteristics.STATISTICS_INFO_AVAILABLE_OIS_DATA_MODES)

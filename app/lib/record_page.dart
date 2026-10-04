@@ -25,6 +25,7 @@ class _RecordPageState extends State<RecordPage> with WidgetsBindingObserver {
   bool _recording = false;
   bool _busy = false;
   int _rotationOffset = 0;
+  double _zoom = 1.0;
   Map<String, dynamic> _status = const {};
   StreamSubscription<Map<String, dynamic>>? _events;
   PassNotes _lastNotes = PassNotes();
@@ -94,7 +95,7 @@ class _RecordPageState extends State<RecordPage> with WidgetsBindingObserver {
     final mode = _mode;
     if (cam == null || mode == null) return;
     try {
-      final p = await RadarCamera.open(cam.id, mode);
+      final p = await RadarCamera.open(cam.id, mode, zoomRatio: _zoom);
       if (mounted) {
         setState(() {
           _preview = p;
@@ -160,6 +161,25 @@ class _RecordPageState extends State<RecordPage> with WidgetsBindingObserver {
       _preview = null;
     });
     await _open();
+  }
+
+  Future<void> _changeZoom(double z) async {
+    if (_recording || z == _zoom) return;
+    setState(() {
+      _zoom = z;
+      _preview = null;
+    });
+    await _open();
+  }
+
+  /// 1x is the main lens; 5x is the Pixel 10 Pro telephoto, which gives five
+  /// times the pixels on a distant approaching car.
+  List<double> get _zoomChoices {
+    final r = _camera?.zoomRatioRange ?? const [1.0, 1.0];
+    return [
+      for (final z in const [1.0, 2.0, 5.0])
+        if (z >= r[0] && z <= r[1]) z,
+    ];
   }
 
   int get _quarterTurns {
@@ -267,6 +287,19 @@ class _RecordPageState extends State<RecordPage> with WidgetsBindingObserver {
             onChanged: _recording || _busy
                 ? null
                 : (m) => m == null ? null : _changeMode(m),
+          ),
+          Wrap(
+            spacing: 4,
+            children: [
+              for (final z in _zoomChoices)
+                ChoiceChip(
+                  label: Text('${z.toStringAsFixed(0)}×'),
+                  selected: z == _zoom,
+                  onSelected: _recording || _busy
+                      ? null
+                      : (_) => _changeZoom(z),
+                ),
+            ],
           ),
           for (final w in _warnings)
             Padding(

@@ -73,7 +73,9 @@ This turns any passing car into a measured one. The ground marks also give us a 
 in the scene, which is the "known distance" calibration from plan §3.6.
 
 1. Choose a straight section. Mark **two gates 20 m (65 ft) apart** along the road. Measure along
-   the shoulder with a tape measure or measuring wheel.
+   the shoulder with a tape measure or measuring wheel. Since you'll be looking along the road,
+   put the **near gate about 10–15 m from where you stand and the far gate about 30–35 m away**.
+   Much farther, and a car moves too few pixels per frame to time the crossing well.
 2. Each gate is **two markers, one on each shoulder**, directly across the road from each other,
    so the line between them is perpendicular to the road. That's 4 markers in total. Small
    traffic cones, orange stakes or bright objects on the ground work. Line them up by eye or with
@@ -81,8 +83,8 @@ in the scene, which is the "known distance" calibration from plan §3.6.
 3. Place each marker right at the pavement edge, on the ground. In the video the line from one
    shoulder marker to the other then shows exactly where that gate crosses the road.
 4. Record passes with **both gates in view** when the car crosses them. Later I measure the
-   frames where the front tire crosses each gate line. 20 m ÷ elapsed time = speed. At 60 fps
-   this is accurate to about ±1%.
+   frames where the front tires cross each gate line. 20 m ÷ elapsed time = speed. At 60 fps
+   (1080p60) this is accurate to about ±1%, so use 1080p60 for gate passes.
 5. Note the gate spacing in the first pass's notes and set the source to **Timed between road
    markers**.
 
@@ -92,12 +94,14 @@ in the scene, which is the "known distance" calibration from plan §3.6.
   ±1 mph for vehicles. The **Pocket Radar Classic / Smart Coach** cost more. Ball-sport models
   like the Pocket Radar *Ball Coach* are meant for baseballs and have a short range, so avoid
   them for cars.
+- It's used exactly like the app: from the shoulder, aimed at approaching or receding cars. That
+  makes it a natural reference.
 - Radar measures only the part of the speed directed toward it, so it reads low when not aimed
-  along the direction of travel. That's about 2% low at 11° off and 3.4% low at 15°. It works
-  best for approaching and receding passes. It's useless for a car crossing side-to-side
-  right in front of you.
-- Handling a radar gun and a phone at once is awkward. Brace the phone on something, or use
-  the radar only on approaching passes.
+  along the direction of travel. That's about 2% low at 11° off and 3.4% low at 15°. From the
+  shoulder the angle is small for distant cars, and we can correct it using the app's 3D track.
+- Handling a radar gun and a phone at once is awkward. Brace the phone on something (a monopod
+  or tripod is ideal) and hold the radar gun next to it. Say the radar reading out loud: the
+  recording's audio captures it, and you can type it in the notes afterwards.
 
 ### D. No ground truth
 
@@ -106,34 +110,49 @@ estimate. Set the source to **None**.
 
 ## 5. The passes
 
-Record each car as **one recording**. Start about 2 s before the car enters the frame and stop
-after it leaves. After you stop, the app asks you to describe the pass. Fill in the direction,
-vehicle type, ground truth (if any), and your phone's height and distance from the lane. The
-app remembers these between passes, so usually you only change one or two fields.
+The main use case is **radar-gun style**: you stand on the shoulder with the phone braced, pointed
+along the road at a car **coming toward you** or **driving away** after it passes, at a slight
+angle because you're off to the side of its lane.
 
-Video mode: use **2160p30** (4K) for most passes, since more pixels help read plates and wheels.
-Do a few in **1080p60** for comparison.
+Record each car as **one recording**. Start when the car first appears in the distance, and stop
+when it's close (approaching) or small in the distance (receding). For a pass-by, one recording
+can cover the approach, the pass and the recession. After you stop, the app asks you to describe
+the pass. Fill in the direction, vehicle type, ground truth (if any), and your phone's height and
+distance from the lane. The app remembers these between passes, so usually you only change one or
+two fields.
 
-| # | Where you stand | Direction | Hold | Notes |
+**Brace the phone** like you'd hold a radar gun steady: against a fence post, a car roof or a
+mailbox, or on a monopod or tripod. If you can, use a support of a known height and enter it as
+the phone height. Knowing that height exactly gives an extra measurement of range.
+
+**Lens:** use **1×** for cars within about 50 m and **5×** to start measuring them farther out.
+The zoom buttons are under the video-mode menu. Pick the lens before you start recording: the
+app keeps the lens fixed during a recording.
+
+**Video mode:** use **2160p30** (4K) for most passes, since more pixels on the car mean better
+measurements. Do a few in **1080p60** for comparison.
+
+| # | Where you stand | Direction | Lens | Notes |
 |---|---|---|---|---|
-| 1–2 | Shoulder, ~5–8 m from the lane, opposite the middle of the gates | Car crosses left→right / right→left | Handheld, pan to follow | **The main use case.** Keep the car's side and wheels in view |
-| 3–4 | Same spot | Crossing, other direction | Braced (on a post, car roof or fence) | Same view, steadier, so we can compare |
-| 5 | Shoulder, 30–50 m down the road from the gates, looking back along the road | Approaching | Handheld | Plate visible; good for radar |
-| 6 | Same spot, turned around | Receding | Handheld | Rear plate; good for radar |
-| 7–8 | Set back 15–25 m from the road, both gates in view | Crossing | Braced | Wide view: best for gate timing |
-| 9+ | Repeat 1–6 at different speeds, in 1080p60, and at different distances | Any | Any | More variety means a better test |
+| 1–2 | Shoulder, 2–4 m off the pavement edge, looking up the road | Approaching in the near lane | 1× | **The main use case.** Keep the whole car, all four tires if possible, in view |
+| 3–4 | Same spot, turned around | Receding in the near lane | 1× | Rear plate always visible |
+| 5–6 | Same spot | Approaching / receding in the **far** lane | 1× | Larger angle; tests the oblique geometry |
+| 7–8 | Same spot | Approaching from far away | 5× | Start the recording when the car is 100–150 m out |
+| 9 | Same spot | Pass-by: record the approach, the pass and the recession in one clip | 1× | Useful later for Doppler audio |
+| 10+ | Repeat at different speeds, both lanes, 1080p60, handheld vs braced | Any | Any | More variety means a better test |
 
 Six passes is a good first session. Around 20 gives the first useful accuracy numbers. If several
 cars are in view, that's fine, just choose **Multiple vehicles**.
 
 Tips:
 
-- **Hold the zoom at 1× and don't pinch.** Each recording must stay on the main lens. The status
-  panel shows the active lens. It should not change.
+- **Don't pinch-zoom.** Choose 1×, 2× or 5× before recording. The status panel shows the active
+  lens; it should not change during a recording.
 - **Bright daylight is best for now.** The status panel warns when exposure is longer than
   4 ms, which blurs moving cars.
-- **Measure your distance to the lane once per spot.** Pace it out, or better, use a tape
-  measure. Estimate your phone height (chest height is about 1.3–1.5 m).
+- **Measure your distance to the lane center once per spot.** Pace it out, or better, use a tape
+  measure. Enter your phone height (chest height is about 1.3–1.5 m; use the support's height if
+  braced).
 - If something odd happens, like a lens switch, a dropped recording or a car stopping, add a note
   rather than deleting the recording.
 

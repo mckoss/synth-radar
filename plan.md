@@ -1,7 +1,8 @@
 # Synth Radar — Project Plan
 
-A handheld, on-device, camera-based vehicle speed estimator. A pedestrian standing beside a
-road points a phone at passing traffic. The app detects and tracks each vehicle, estimates its
+An on-device, camera-based vehicle speed estimator used like a radar gun. A pedestrian on the
+shoulder of a road braces a phone and points it up or down the road at a car approaching or
+driving away at an oblique angle. The app detects and tracks each vehicle, estimates its
 speed with an explicit error band, reads its license plate when it can, saves a short evidence
 clip, and helps the user send a report (email/share) to a chosen recipient.
 
@@ -19,9 +20,10 @@ clip, and helps the user send a report (email/share) to a chosen recipient.
 |---|---|
 | UI framework | Flutter (Dart) |
 | First platform | Android, Pixel 10 Pro |
-| Capture posture | **Handheld**, pedestrian at the roadside, car passing roughly side-to-side |
+| Capture posture | **Radar-gun style:** pedestrian on the shoulder, phone **braced** (or handheld), pointed along the road at a car **approaching or receding at an oblique angle**. Side-on crossing views are a secondary case: from the shoulder the camera can't fit a passing car side-on |
+| Lenses | 1× main camera at 4K for near/medium range; **5× telephoto** (Pixel 10 Pro) for distant approaching cars, five times the pixels on target |
 | Compute | On-device only for capture and speed estimation |
-| Scale cues | Vehicle size priors (length, wheelbase, height), headlight/taillight spacing, and **license plate size** when visible |
+| Scale cues | **Track width** (left–right wheel spacing), **license plate size**, headlight/taillight spacing, ground plane (phone height), plus wheelbase in oblique views and make/model when known |
 | Licenses | Permissive only (Apache-2.0 is fine) — rules out Ultralytics YOLOv5/v8/11 (AGPL) and YOLOv9 reference code (GPL) |
 | Real-time | Live on-screen estimate is desired; a more accurate offline re-analysis of saved clips is acceptable |
 | Jurisdiction | **US only.** Plates 12 × 6 in (305 × 152 mm); OCR trained for US formats; legal review against US/state law |
@@ -33,8 +35,8 @@ clip, and helps the user send a report (email/share) to a chosen recipient.
 
 1. **State-level rules** (US): legal review of plate reading, audio recording and citizen
    reporting for the user's state.
-2. **Accuracy target:** proposed goal is **±3 mph (±5 km/h) at 95 % confidence for 20–45 mph at
-   8–30 m range**, with the app refusing to show a number when the band is wider than ±15 %.
+2. **Accuracy target:** proposed goal is **±3 mph (±5 km/h) at 95 % confidence for 20–45 mph,
+   tracking the car between roughly 80 m and 15 m away** (1× lens up to ~50 m, 5× beyond), with the app refusing to show a number when the band is wider than ±15 %.
 3. **Report recipient:** police non-emergency email, city traffic-calming program, HOA, etc. This
    affects report format, not architecture.
 4. **Speed units and display:** mph vs km/h (settings toggle; default from locale).
@@ -63,19 +65,52 @@ position against time across the whole track, not a frame-to-frame difference. T
 turns noisy per-frame measurements into a tight estimate.
 
 Key consequence: **a relative error in the size prior becomes the same relative error in speed.**
-If we think the wheelbase is 2.8 m ± 8 %, speed is ± 8 % from that alone. So the plan puts effort
-into getting the scale reference right and fusing several of them.
+If we think the track width is 1.60 m ± 6 %, speed is ± 6 % from that alone. So the plan puts
+effort into getting the scale reference right and fusing several of them.
+
+**The primary geometry: approaching or receding at an oblique angle.** The camera stands on the
+shoulder, a few metres to the side of the car's path, and looks along the road. The car's
+motion is mostly toward or away from the camera, so speed comes mainly from how fast its
+**range changes**, i.e. how fast it grows or shrinks in the image. The small sideways offset
+(3–5 m) makes the view oblique, but the estimator works in 3D world coordinates, so unlike a
+radar gun there is no cosine error to correct. Rough numbers for the Pixel 10 Pro at 4K
+(focal length ≈ 2,660 px at 1×, ≈ 12,000 px at 5×) and a 1.6 m track width:
+
+| Range | Track width on screen, 1× | 5× | Plate width on screen, 1× | 5× |
+|---|---|---|---|---|
+| 15 m | 284 px | — (too close) | 54 px | — |
+| 30 m | 142 px | 640 px | 27 px | 122 px |
+| 60 m | 71 px | 320 px | 14 px | 61 px |
+| 100 m | 43 px | 192 px | 8 px | 37 px |
+
+What this means for accuracy:
+
+- **Random noise is not the problem.** A car tracked from 50 m to 15 m at 30 mph gives ~80
+  frames over ~2.6 s. Even with 1 px of noise per frame, the fitted speed's random error is
+  under 0.1 mph.
+- **Systematic errors dominate.** These are a wrong size prior, and keypoints consistently
+  placed a pixel or two off (e.g. the detected tire contact always slightly outside the true
+  one). A 1 px bias on a 27 px plate is 4 %. So the fixes are better priors (make/model, plate,
+  several fused cues), larger images of the car (**5× telephoto** for distant cars), and
+  careful keypoint training.
+- **Self-calibration over a long approach.** The ground-plane cue (§3.2) gives range from the
+  phone's height and the downward angle to the tires, independent of vehicle size. The scale cues
+  give range proportional to the assumed size. Over an approach from 80 m to 15 m the two
+  curves only agree for one vehicle size and one small camera-pitch bias, so a joint fit can
+  estimate the car's true size. This needs a flat road and a known phone height; testing it is a
+  Phase 1 research item. A braced phone at a measured height (monopod, fence post, car roof)
+  makes the height known.
 
 ### 3.2 Scale cues, best to worst
 
 | Cue | Known size | Typical uncertainty | When available |
 |---|---|---|---|
-| **License plate** (width and height) | US: 305 × 152 mm (standardized) | ~1–2 % physical; pixel error dominates (~54 px wide at 15 m in 4K) | Approaching/receding or oblique views; often not in a pure side view |
-| **Wheelbase** (front/rear wheel–ground contact points) | Class prior: compact ~2.6 m, sedan ~2.8 m, SUV/pickup ~2.9–3.6 m | ±5–10 % by class; ~±1 % if make/model is known | Side view — **the best cue for the primary use case** |
-| **Headlight / taillight spacing** | ~1.2–1.6 m by class | ±10–15 % | Front/rear views |
+| **Track width** (left–right wheel–ground contacts) | Most cars/SUVs/pickups/vans 1.55–1.75 m; subcompacts ~1.40–1.50 m | ±5–6 % by class, ~±1 % if make/model known | **Primary cue:** front/rear views, i.e. every approaching or receding car |
+| **License plate** (width and height) | US: 305 × 152 mm (standardized) | ~1–2 % physical; pixel bias dominates at range (see §3.1 table) | Rear plate on every receding car. Front plate only in states that require one (about 20 US states are rear-plate-only) |
+| **Headlight / taillight spacing** | ~1.2–1.6 m by class | ±10–15 % | Front/rear views; lights are high-contrast, so they're also easy to find at night |
+| **Ground plane** (phone height + gravity) | Phone ~1.3–1.6 m above road (exact if braced at a measured height); gravity from IMU | Range from the downward angle to the tire contacts; error grows with range | Whenever the tires are visible; size-independent, enables the self-calibration in §3.1 |
+| **Wheelbase** (front/rear wheel–ground contact points) | Class prior: compact ~2.6 m, sedan ~2.8 m, SUV/pickup ~2.9–3.6 m | ±5–10 % by class; ~±1 % if make/model is known | Oblique views where both wheels on the near side are visible (foreshortened); side-on crossing views |
 | **Overall length / height** | Class prior | ±10–20 % | Always, but bounding boxes are sloppy |
-| **Track width** (left–right wheel–ground contacts) | Most cars/SUVs/pickups/vans 1.55–1.75 m; subcompacts ~1.40–1.50 m | ±5–6 % by class, ~±1 % if make/model known | Front/rear views (approaching, receding) — see below |
-| **Ground plane** (phone height + gravity) | Phone held ~1.3–1.6 m above road; gravity vector from IMU | Range from depression angle to wheel contact; ±10 % from height uncertainty | Whenever wheels are visible; independent cross-check |
 | **Make/model → spec sheet** | Exact wheelbase/length | ~1 % | User picks make/model in review (§3.6) now; automatic classifier later |
 
 The estimator fuses every available cue per frame (weighted by its variance) and reports the
@@ -100,23 +135,26 @@ Most passenger cars and small SUVs cluster at **2.6–2.9 m**, so a class-based 
 about ±5–7 %. Pickups and vans spread much wider. Two things tighten it:
 
 - **Vehicle class** from the detector (car vs. pickup vs. van) narrows the prior.
-- **Track width** (left–right wheel spacing) is the more uniform measure across classes. Wheelbase
+- **Track width** (left–right wheel spacing) is the more uniform measure across classes, and the
+  one the primary geometry sees best. Wheelbase
   runs from ~1.9 m (Smart) to over 4 m (long vans, crew-cab pickups), about ±35 % around the
   middle. Track width stays around 1.40–1.75 m for nearly everything on the road, about ±11 %,
   or ±5–6 % once subcompacts are recognized as a class. A pickup's or van's track is about the
   same as a sedan's, even though its wheelbase is much longer. The catch is visibility: track
   width can only be measured when both wheels of an axle are visible, i.e. in **front/rear
-  views** (approaching or receding cars). In a pure side view the far wheels are hidden. So
-  track width and wheelbase complement each other: track width (plus the plate) for
-  approaching/receding passes, wheelbase for crossing passes, and both in oblique views, which
-  are common in practice. Track width is measured at the tire–ground contact points, which
+  views** (approaching or receding cars), which is exactly the primary use case. In a pure side
+  view the far wheels are hidden. In oblique views both cues are partly visible, so the
+  estimator fits them together. Track width is measured at the tire–ground contact points, which
   avoids the variable body and mirror width.
 - **Knowing the make/model** pins it to ~1 %. The user can supply this in review (§3.6); an
   automatic make/model classifier is a later addition.
 
-### 3.3 Handheld camera motion
+### 3.3 Camera motion (braced or handheld)
 
-The pedestrian will pan to follow the car. That rotation must not be mistaken for car motion.
+The phone is normally braced like a radar gun, but it still moves a little, and handheld use
+must work too. The user may also pan slightly to keep an approaching car centered (much less
+than for a crossing car). That rotation must not be mistaken for car motion. It matters most
+for the ground-plane cue, where 0.1° of pitch error is ~4 % of range at 30 m.
 
 - Read the **gyroscope** at high rate (≥200 Hz) and integrate orientation, synchronized to frame
   `SENSOR_TIMESTAMP`s (same clock base on Pixel; verify in Phase 0).
@@ -134,14 +172,17 @@ Android Camera2 exposes the factory calibration of each physical camera:
 
 These are exactly the "optical profile" we need. Pitfalls to control:
 
-- **Lock to the main physical camera** (no logical-multicamera lens switching, no zoom changes
-  during a measurement).
+- **Lock to one physical camera per recording**, either the 1× main or the 5× telephoto. No
+  lens switching or zoom changes during a measurement. The recorder fixes the zoom ratio and
+  logs the active physical camera on every frame. Calibrate each (lens, resolution) mode once
+  with the checkerboard tool, which gives intrinsics directly in video pixels.
 - **Turn off electronic video stabilization** for the measurement stream; EIS crops and warps the
   image and invalidates the intrinsics. (OIS may stay on; its small principal-point shift goes in
   the error budget.)
 - **Map intrinsics through the stream crop/scale** (active array → output stream resolution).
-- **Rolling shutter:** a car moving sideways is captured at slightly different times top to
-  bottom; use the per-frame skew to time-stamp each keypoint by its row.
+- **Rolling shutter:** each row is exposed at a slightly different time. For approaching cars the
+  image motion is small, so the effect is minor, but the per-frame skew is logged so each
+  keypoint can be time-stamped by its row.
 - Fallback for devices that don't publish intrinsics: compute from focal length + sensor size,
   and offer an optional one-time checkerboard calibration (OpenCV) in a developer menu. Use the
   same checkerboard tool in Phase 0 to **verify** the Pixel's published values.
@@ -151,9 +192,11 @@ These are exactly the "optical profile" we need. Pitfalls to control:
 A passing car's tire/engine tones shift by the ratio `(c + v) / (c − v)` between approach and
 recession (≈ 8 % at 30 mph). With the closest-approach time and distance known from vision, a
 spectrogram fit of tonal components can give an **independent** speed estimate that has no
-scale-prior error at all. It's most valuable where vision is weakest (cars coming head-on). It is
-planned as a later phase; the audio track is recorded with clips from the start so the data
-exists.
+scale-prior error at all. This suits the radar-gun geometry, since the motion is mostly toward
+or away from the microphone. The catch: the tone's true pitch is unknown, so a single
+approaching (or receding) clip constrains speed only weakly. A clip that spans the car passing
+(approach and recession) works best. It is planned as a later phase; the audio track is recorded
+with clips from the start so the data exists.
 
 ### 3.6 Human-in-the-loop review (optional accuracy boost)
 
@@ -162,8 +205,9 @@ open a **review screen** for the saved clip and tighten the estimate. The two so
 are handled separately:
 
 - **Pixel error** (where exactly the wheels touch the road): the user drags **wheel–ground contact
-  markers** onto the front and rear tires (side views) or the left and right tires (front/rear
-  views, for track width) on two or more frames, ideally far apart in time. The
+  markers** onto the left and right tires (track width, the main case) or the front and rear
+  tires on the near side (oblique views, wheelbase) on two or more frames, ideally far apart in
+  time. The
   app pre-places the markers from the keypoint model and the segmentation mask; the user only
   nudges them. Tapping the plate corners works the same way.
 - **Size-prior error** (what the true wheelbase is): the user selects the **vehicle class or
@@ -211,9 +255,9 @@ useful training labels for the keypoint model.
 
 ### 4.3 Recommended path: start off-the-shelf, then specialize
 
-1. **Phase 1:** RF-DETR Nano COCO weights as-is, keeping only vehicle classes. Wheelbase comes
-   from a cheap heuristic (lower corners of the box plus wheel-blob search) and ground-plane
-   range. This proves the end-to-end pipeline and the estimator math.
+1. **Phase 1:** RF-DETR Nano COCO weights as-is, keeping only vehicle classes. Range comes from
+   the box width against a class width prior, plus ground-plane range from the box's bottom
+   edge. This is crude but proves the end-to-end pipeline and the estimator math.
 2. **Phase 2:** **Fine-tune** one model with our own classes and keypoints:
    `vehicle{car, suv_pickup, van, truck, bus, motorcycle}`, `plate`, plus keypoints. Fine-tuning a
    pretrained detector needs only a few thousand labeled frames, many of them from our own Pixel
@@ -281,10 +325,15 @@ data-center GPU). It is useful in three places:
   (e.g. 20 m), each marked by a pair of markers directly across the road from each other at
   the pavement edges. In the image, the line between a gate's two markers is that gate's
   ground line, so the frame where a tire crosses it is exact (no parallax). Speed = spacing ÷
-  elapsed time, about ±1 % at 60 fps. Works for any passing car, and the four markers double as
+  elapsed time. Seen from the shoulder looking along the road, place the near gate ~10–15 m
+  and the far gate ~30–35 m from the camera: beyond that, a car's image moves too little per
+  frame to time the crossing precisely (about ±1 % at 60 fps within that range; use 5× for
+  farther gates). Works for any passing car, and the four markers double as
   the known-distance scene calibration of §3.6.
-- Optional: an inexpensive handheld radar gun (e.g. Bushnell Velocity, ~$90–150, ±1 mph) as a
-  second reference for approaching/receding passes (cosine error makes it read low off-axis).
+- Optional: an inexpensive handheld radar gun (e.g. Bushnell Velocity, ~$90–150, ±1 mph). It's
+  used from the same spot and in the same direction as the app, so it's a natural reference.
+  Its cosine error (reading low off-axis) is computable from our own 3D track and can be
+  corrected.
 - Every test pass is logged (clip + sensor dump + ground truth) into a growing evaluation set.
   Field procedure: [docs/test-protocol.md](docs/test-protocol.md).
 
@@ -302,10 +351,10 @@ pickups, compacts, trucks, buses and motorcycles.
 **How we'd use it.**
 
 1. **Estimator and tracker regression tests (highest value).** Scripted scenes recreate the
-   app's geometry: a camera at 1.4 m on the roadside of a rural two-lane road, with the Pixel's
-   intrinsics and lens distortion. One or several cars pass in both directions at known speeds,
-   with occlusions. Real **hand motion from our own recordings' IMU logs** is replayed on the
-   simulated camera. The speed error and track-ID mix-ups are then measured exactly, on every
+   app's geometry: a camera at 1.4 m on the shoulder of a rural two-lane road, looking along the
+   road, with the Pixel's 1× and 5× intrinsics and lens distortion. One or several cars approach
+   and recede in both lanes at known speeds, with occlusions. Real **camera motion from our own
+   recordings' IMU logs** is replayed on the simulated camera. The speed error and track-ID mix-ups are then measured exactly, on every
    code change, across thousands of passes no field session could produce.
 2. **Training data for multi-vehicle detection, segmentation and tracking.** Every frame comes
    with perfect masks, boxes, keypoints and track IDs at no labeling cost. Synthetic images alone
@@ -434,14 +483,16 @@ Rationale:
 
 - [ ] Native capture pipeline → detector → tracker → overlay in Flutter (boxes + track IDs).
 - [ ] `core/` C++ library: lens model, gyro orientation, world-frame bearings, tracker.
-- [ ] Speed estimator v1: ground-plane range + box-based wheelbase heuristic + class length
-      priors; constant-velocity fit; error budget; overlay `speed ± error`.
+- [ ] Speed estimator v1 for approaching/receding cars: range from box width (class width prior)
+      and ground plane; constant-velocity fit of 3D position; error budget; overlay
+      `speed ± error`. Try the scale/ground-plane joint fit (§3.1 self-calibration).
 - [ ] Desktop replay harness (Python + pybind11) for recorded clips.
-- [ ] CARLA scene generator (cloud GPU) for side-of-road passes with known speeds, replaying real
-      IMU hand motion; estimator and tracker regression tests (§4.7).
+- [ ] CARLA scene generator (cloud GPU) for approaching/receding passes seen from the shoulder,
+      with known speeds, replaying real IMU camera motion; estimator and tracker regression tests (§4.7).
 - [ ] Owner's test fleet: measure wheelbase and track width of all four vehicles; GPS-logged
       drive-bys at 20–45 mph.
-- [ ] First real-world ground-truth session (GPS-logged drive-bys at 20/25/30/35/40 mph).
+- [ ] First real-world ground-truth session (GPS-logged drive-bys at 20/25/30/35/40 mph,
+      approaching and receding, 1× and 5×).
 
 **Exit:** median error and 95 % error band measured against ground truth; we know which cue limits
 accuracy.
@@ -459,7 +510,7 @@ accuracy.
 - [ ] Estimator v2: fuse plate, wheelbase, track width, light spacing and ground-plane cues per frame.
 - [ ] Quantize (FP16/INT8) and re-profile; target ≥20 fps live on the Pixel 10 Pro.
 
-**Exit:** meets the accuracy target from §2 on the evaluation set for side-view passes.
+**Exit:** meets the accuracy target from §2 on the evaluation set for approaching and receding passes.
 
 ### Phase 3 — Evidence, clips and reporting (2–3 weeks)
 
