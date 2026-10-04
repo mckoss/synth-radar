@@ -72,12 +72,32 @@ into getting the scale reference right and fusing several of them.
 | **Headlight / taillight spacing** | ~1.2–1.6 m by class | ±10–15 % | Front/rear views |
 | **Overall length / height** | Class prior | ±10–20 % | Always, but bounding boxes are sloppy |
 | **Ground plane** (phone height + gravity) | Phone held ~1.3–1.6 m above road; gravity vector from IMU | Range from depression angle to wheel contact; ±10 % from height uncertainty | Whenever wheels are visible; independent cross-check |
-| **Make/model → spec sheet** (future) | Exact wheelbase/length | ~1 % | Requires a fine-grained classifier |
+| **Make/model → spec sheet** | Exact wheelbase/length | ~1 % | User picks make/model in review (§3.6) now; automatic classifier later |
 
 The estimator fuses every available cue per frame (weighted by its variance) and reports the
 combined speed with an uncertainty from a proper error budget (prior uncertainty + pixel
 localization noise + timestamp jitter + residual camera rotation error). The overlay shows
 `32 mph ± 2` style ranges, and a confidence level.
+
+**Wheelbase is a strong cue but it is not standardized.** Approximate published values:
+
+| Vehicle | Wheelbase |
+|---|---|
+| Smart Fortwo | 1.87 m (73.7 in) |
+| Mini Cooper hardtop | ~2.50 m |
+| Toyota RAV4 | ~2.69 m |
+| Honda Civic sedan | ~2.73 m |
+| Toyota Camry | ~2.83 m |
+| Tesla Model 3 | ~2.88 m |
+| Ford F-150 SuperCrew (5.5 ft bed) | ~3.69 m |
+| Full-size crew-cab long-bed pickup / 15-passenger van | ~4.0–4.2 m |
+
+Most passenger cars and small SUVs cluster at **2.6–2.9 m**, so a class-based prior is good to
+about ±5–7 %. Pickups and vans spread much wider. Two things tighten it:
+
+- **Vehicle class** from the detector (car vs. pickup vs. van) narrows the prior.
+- **Knowing the make/model** pins it to ~1 %. The user can supply this in review (§3.6); an
+  automatic make/model classifier is a later addition.
 
 ### 3.3 Handheld camera motion
 
@@ -120,6 +140,30 @@ scale-prior error at all. It's most valuable where vision is weakest (cars comin
 planned as a later phase; the audio track is recorded with clips from the start so the data
 exists.
 
+### 3.6 Human-in-the-loop review (optional accuracy boost)
+
+The automatic estimate is never blocked on the user, but before a report is sent the user can
+open a **review screen** for the saved clip and tighten the estimate. The two sources of error
+are handled separately:
+
+- **Pixel error** (where exactly the wheels touch the road): the user drags **wheel–ground contact
+  markers** onto the front and rear tires on two or more frames, ideally far apart in time. The
+  app pre-places the markers from the keypoint model and the segmentation mask; the user only
+  nudges them. Tapping the plate corners works the same way.
+- **Size-prior error** (what the true wheelbase is): the user selects the **vehicle class or
+  exact make/model** from a searchable list backed by a bundled wheelbase/length table. This is
+  the bigger win: it cuts the wheelbase uncertainty from ±5–10 % to ~1 %.
+- **Scene calibration** (optional): the user marks two points on the road a known distance apart
+  (lane width, a measured curb segment, parking-space markings). This gives an independent check
+  of range and of the ground plane.
+- **Corrections:** fix plate text, merge or split tracks if the tracker swapped vehicles, and
+  confirm which vehicle the report is about.
+
+Every manual input is recorded in the JSON sidecar as "user-supplied", the estimate is recomputed
+with the new inputs, and the report shows both the automatic and the reviewed values with their
+error bands. Reviewed corrections (with consent, and kept on-device unless exported) are also
+useful training labels for the keypoint model.
+
 ---
 
 ## 4. Models
@@ -144,8 +188,10 @@ exists.
 | Vehicle detector (fallback) | MediaPipe / EfficientDet-Lite0 | Apache-2.0 | Weaker accuracy but trivially deployable; good for a day-one smoke test |
 | Plate detector | `open-image-models` YOLOv9-t plate detector (ankandrew) | MIT (weights; verify that no GPL code ships with them) | Or fine-tune RF-DETR/DEIM with a `plate` class (preferred long term — one license story) |
 | Plate OCR | **fast-plate-ocr** (CCT-XS global model) | MIT | Tiny, exports to TFLite/ONNX; fine-tune on US plates |
-| Keypoints | Small top-down keypoint head on vehicle crops (e.g. RTMPose-style, MMPose) | Apache-2.0 | Trained on vehicle-keypoint data (see §4.4) |
+| Keypoints | Small top-down keypoint head on vehicle crops (e.g. RTMPose-style, MMPose) | Apache-2.0 | Trained on vehicle-keypoint data (see §4.5) |
 | Tracker | **ByteTrack** or **OC-SORT** | MIT | Pure algorithm; reimplement in C++ (small), with motion model in world frame |
+| Segmentation (offline, on-device) | **EdgeTAM** (Meta; on-device SAM 2) | Apache-2.0 (verify) | Box-prompted segmentation and tracking; ~16 fps on an iPhone 15 Pro Max. Used on **saved clips**, not live (§4.4) |
+| Labeling assistant (desktop only) | **SAM 3** / **SAM 2** (Meta) | SAM 3: Meta SAM License (gated, custom); SAM 2: Apache-2.0 | Text-prompted ("car", "license plate", "wheel") auto-labeling of our footage. Never shipped in the app |
 
 ### 4.3 Recommended path: start off-the-shelf, then specialize
 
@@ -164,7 +210,24 @@ The two-stage design (fast detector on a downscaled frame → keypoints, plate, 
 **full-resolution crops**) is what makes small plates and precise wheel points feasible while
 keeping the live loop fast.
 
-### 4.4 Data
+### 4.4 Where Meta's Segment Anything (SAM) family fits
+
+SAM is not the live detector: SAM 2 and EdgeTAM have to be told *where* the object is (a click or
+a box), and SAM 3, which can find "cars" by itself, is far too heavy for a phone (~5–6 fps on a
+data-center GPU). It is useful in three places:
+
+1. **Labeling (Phase 2, biggest win).** SAM 3 text prompts pre-label vehicles, plates and wheels
+   across our footage; annotators correct rather than draw. CVAT and Label Studio both support
+   SAM-assisted labeling. SAM 3 runs only on a development machine, so its custom license affects
+   the tooling, not the app (terms still to be reviewed).
+2. **Offline refinement of saved clips (Phase 3).** EdgeTAM, prompted with the detector's box,
+   produces a per-frame mask of the car. The mask's lower silhouette gives tighter wheel–ground
+   contact points and vehicle length than a bounding box, and it pre-places the markers in the
+   review screen (§3.6).
+3. **Background-only motion estimation.** Masking out vehicles leaves static background points
+   for correcting gyro drift (§3.3).
+
+### 4.5 Data
 
 - **Own footage (most important):** Pixel 10 Pro clips from the actual use posture, recorded
   with the app's own capture pipeline so intrinsics and timestamps are exact.
@@ -174,9 +237,13 @@ keeping the live loop fast.
 - **Synthetic data with ground-truth speed:** **CARLA** (MIT) can render street scenes with known
   vehicle speeds, known camera intrinsics, and simulated handheld motion. That makes it an ideal
   regression test for the speed estimator, and a source of keypoint labels for free.
-- Labeling tool: CVAT or Label Studio (both permissive, self-hostable).
+- Labeling tool: CVAT or Label Studio (both permissive, self-hostable), with SAM-assisted
+  pre-labeling (§4.4).
+- **Vehicle dimension table:** make/model/year → wheelbase, length, width, track width, for the
+  review screen's make/model picker and, later, the automatic classifier. Source and license to be
+  determined (manufacturer spec sheets, open datasets).
 
-### 4.5 Ground truth for real-world speed validation
+### 4.6 Ground truth for real-world speed validation
 
 - A volunteer drives a known car past the tester at set speeds, logging speed with a phone GPS
   logger (Doppler-derived GPS speed is accurate to ~0.1–0.5 mph at steady speed) and/or an
@@ -222,8 +289,9 @@ Rationale:
   against ground truth. One implementation, tested once.
 - **Live vs. offline.** Live mode runs the detector at 15–30 fps on a downscaled frame and gives
   a provisional estimate. When a track completes, the saved clip is re-analyzed on-device at full
-  frame rate and resolution with smoothing (forward-backward / RTS smoother). That refined number
-  is what goes into a report.
+  frame rate and resolution with smoothing (forward-backward / RTS smoother), plus EdgeTAM
+  segmentation for tighter keypoints, and the user may refine it further in the review screen
+  (§3.6). That refined number is what goes into a report.
 
 ### 5.1 Evidence package (per vehicle)
 
@@ -277,7 +345,9 @@ accuracy.
 
 ### Phase 2 — Custom model: keypoints and plates (4–6 weeks)
 
-- [ ] Labeling pipeline (CVAT/Label Studio); label own footage + subsets of public data.
+- [ ] Labeling pipeline (CVAT/Label Studio) with SAM 3 / SAM 2 pre-labeling; label own footage +
+      subsets of public data.
+- [ ] Review SAM 3 license terms for use as an internal labeling tool.
 - [ ] Fine-tune detector with vehicle subclasses + `plate`; train keypoint head (wheel contacts,
       lights, plate corners).
 - [ ] Plate OCR: fast-plate-ocr fine-tuned on US plates; per-character confidence.
@@ -290,6 +360,11 @@ accuracy.
 
 - [ ] Ring-buffer recording; automatic clip save per completed track; clip library UI.
 - [ ] Offline re-analysis of saved clips (full fps, smoother) → refined estimate.
+- [ ] EdgeTAM on-device: convert to LiteRT, profile on the Pixel 10 Pro, use masks to refine
+      wheel contact points.
+- [ ] Review screen (§3.6): frame scrubber, draggable wheel and plate markers, vehicle class /
+      make-model picker backed by a dimension table, optional two-point road calibration,
+      track merge/split, plate text correction; live recomputation of `speed ± error`.
 - [ ] Overlay burn-in (Media3 Transformer), JSON sidecar, report composer, share/email.
 - [ ] Settings: units, phone height, recipients, retention/auto-delete policy.
 
@@ -304,7 +379,8 @@ accuracy.
 ### Future
 
 - Doppler audio speed estimate fused with vision (§3.5).
-- Make/model classifier → exact dimensions from a spec table.
+- Automatic make/model classifier → exact dimensions from the same spec table the review screen
+  uses.
 - iOS (AVFoundation + Core ML or LiteRT; same `core/` C++).
 - Head-on / receding geometry (plate-dominated, Doppler-assisted).
 
@@ -358,3 +434,6 @@ synth-radar/
   https://developer.android.com/reference/android/hardware/camera2/CameraCharacteristics
 - Pixel 10 Pro specs: https://store.google.com/product/pixel_10_pro_specs
 - CARLA simulator (MIT): https://carla.org
+- SAM 2 (Apache-2.0): https://github.com/facebookresearch/sam2 — SAM 3:
+  https://github.com/facebookresearch/sam3
+- EdgeTAM: https://huggingface.co/facebook/EdgeTAM
