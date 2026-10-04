@@ -51,6 +51,12 @@ enough to start.
 
 ### A. A cooperating driver with GPS (best, if you have a helper)
 
+Use our own fleet (Model S, Model Y, Sprinter, Spark). Their exact dimensions make them the best
+test cars. Measure each one once with a tape measure: wheelbase (front to rear wheel center, both
+sides) and track width (center of the left tire tread to center of the right, front and rear
+axles). Write the values in `data/fleet.md` on your computer, and put the vehicle name in each
+pass's make/model field.
+
 - A friend or family member drives a known car past you at steady, pre-agreed speeds using cruise
   control, or just holding the speed.
 - Their phone runs a GPS logging app that records speed with timestamps, such as

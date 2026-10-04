@@ -37,8 +37,10 @@ flutter pub get
 flutter build apk --release --target-platform android-arm64   # → build/app/outputs/flutter-apk/app-release.apk
 ```
 
-Requires Flutter 3.47+ and Android SDK platform 37. CI (`.github/workflows/ci.yml`) builds the APK
-as a downloadable artifact on every push.
+Requires Flutter 3.47+ and Android SDK platform 37. CI builds the APK on every push and publishes
+GitHub Releases from `main`, version tags and manual runs. Latest build:
+<https://github.com/mckoss/synth-radar/releases/latest/download/synth-radar.apk>.
+See [docs/releases.md](docs/releases.md), including the one-time signing-key setup.
 
 ```sh
 python3 -m unittest discover -s tools/tests   # tool tests

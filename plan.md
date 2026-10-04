@@ -24,12 +24,15 @@ clip, and helps the user send a report (email/share) to a chosen recipient.
 | Scale cues | Vehicle size priors (length, wheelbase, height), headlight/taillight spacing, and **license plate size** when visible |
 | Licenses | Permissive only (Apache-2.0 is fine) — rules out Ultralytics YOLOv5/v8/11 (AGPL) and YOLOv9 reference code (GPL) |
 | Real-time | Live on-screen estimate is desired; a more accurate offline re-analysis of saved clips is acceptable |
+| Jurisdiction | **US only.** Plates 12 × 6 in (305 × 152 mm); OCR trained for US formats; legal review against US/state law |
+| Training hardware | **Mac Studio (Apple Silicon)** for fine-tuning and evaluation (PyTorch MPS); rent a cloud GPU only for jobs that need NVIDIA (CARLA rendering, very large runs) |
+| Test fleet | Owner's **Tesla Model S, Tesla Model Y, Mercedes Sprinter, Chevy Spark**: known dimensions, spanning small car → large van (§4.6) |
+| Builds | GitHub Actions builds the APK on every push and publishes it as a GitHub Release ([docs/releases.md](docs/releases.md)) |
 
 ## 2. Open questions (not blocking Phase 0/1)
 
-1. **Jurisdiction** (country/state): sets plate dimensions and formats, OCR character set, and the
-   legal review of plate reading, audio recording, and citizen reporting. US is assumed below
-   (plate 12 in × 6 in = 305 × 152 mm).
+1. **State-level rules** (US): legal review of plate reading, audio recording and citizen
+   reporting for the user's state.
 2. **Accuracy target:** proposed goal is **±3 mph (±5 km/h) at 95 % confidence for 20–45 mph at
    8–30 m range**, with the app refusing to show a number when the band is wider than ±15 %.
 3. **Report recipient:** police non-emergency email, city traffic-calming program, HOA, etc. This
@@ -71,6 +74,7 @@ into getting the scale reference right and fusing several of them.
 | **Wheelbase** (front/rear wheel–ground contact points) | Class prior: compact ~2.6 m, sedan ~2.8 m, SUV/pickup ~2.9–3.6 m | ±5–10 % by class; ~±1 % if make/model is known | Side view — **the best cue for the primary use case** |
 | **Headlight / taillight spacing** | ~1.2–1.6 m by class | ±10–15 % | Front/rear views |
 | **Overall length / height** | Class prior | ±10–20 % | Always, but bounding boxes are sloppy |
+| **Track width** (left–right wheel–ground contacts) | Most cars/SUVs/pickups/vans 1.55–1.75 m; subcompacts ~1.40–1.50 m | ±5–6 % by class, ~±1 % if make/model known | Front/rear views (approaching, receding) — see below |
 | **Ground plane** (phone height + gravity) | Phone held ~1.3–1.6 m above road; gravity vector from IMU | Range from depression angle to wheel contact; ±10 % from height uncertainty | Whenever wheels are visible; independent cross-check |
 | **Make/model → spec sheet** | Exact wheelbase/length | ~1 % | User picks make/model in review (§3.6) now; automatic classifier later |
 
@@ -96,6 +100,17 @@ Most passenger cars and small SUVs cluster at **2.6–2.9 m**, so a class-based 
 about ±5–7 %. Pickups and vans spread much wider. Two things tighten it:
 
 - **Vehicle class** from the detector (car vs. pickup vs. van) narrows the prior.
+- **Track width** (left–right wheel spacing) is the more uniform measure across classes. Wheelbase
+  runs from ~1.9 m (Smart) to over 4 m (long vans, crew-cab pickups), about ±35 % around the
+  middle. Track width stays around 1.40–1.75 m for nearly everything on the road, about ±11 %,
+  or ±5–6 % once subcompacts are recognized as a class. A pickup's or van's track is about the
+  same as a sedan's, even though its wheelbase is much longer. The catch is visibility: track
+  width can only be measured when both wheels of an axle are visible, i.e. in **front/rear
+  views** (approaching or receding cars). In a pure side view the far wheels are hidden. So
+  track width and wheelbase complement each other: track width (plus the plate) for
+  approaching/receding passes, wheelbase for crossing passes, and both in oblique views, which
+  are common in practice. Track width is measured at the tire–ground contact points, which
+  avoids the variable body and mirror width.
 - **Knowing the make/model** pins it to ~1 %. The user can supply this in review (§3.6); an
   automatic make/model classifier is a later addition.
 
@@ -147,7 +162,8 @@ open a **review screen** for the saved clip and tighten the estimate. The two so
 are handled separately:
 
 - **Pixel error** (where exactly the wheels touch the road): the user drags **wheel–ground contact
-  markers** onto the front and rear tires on two or more frames, ideally far apart in time. The
+  markers** onto the front and rear tires (side views) or the left and right tires (front/rear
+  views, for track width) on two or more frames, ideally far apart in time. The
   app pre-places the markers from the keypoint model and the segmentation mask; the user only
   nudges them. Tapping the plate corners works the same way.
 - **Size-prior error** (what the true wheelbase is): the user selects the **vehicle class or
@@ -234,9 +250,8 @@ data-center GPU). It is useful in three places:
 - **Public datasets** (check each license before use; some are research-only):
   COCO, Open Images (vehicles, plates), UA-DETRAC, BDD100K, CarFusion and ApolloCar3D (vehicle
   keypoints), CCPD and other plate datasets (OCR pretraining).
-- **Synthetic data with ground-truth speed:** **CARLA** (MIT) can render street scenes with known
-  vehicle speeds, known camera intrinsics, and simulated handheld motion. That makes it an ideal
-  regression test for the speed estimator, and a source of keypoint labels for free.
+- **Synthetic data with ground-truth speed:** CARLA scenes (§4.7) with exact speeds, boxes,
+  segmentation masks and keypoints for every vehicle.
 - Labeling tool: CVAT or Label Studio (both permissive, self-hostable), with SAM-assisted
   pre-labeling (§4.4).
 - **Vehicle dimension table:** make/model/year → wheelbase, length, width, track width, for the
@@ -245,6 +260,20 @@ data-center GPU). It is useful in three places:
 
 ### 4.6 Ground truth for real-world speed validation
 
+- **Owner's test fleet.** Four vehicles with known dimensions that span the size range:
+
+  | Vehicle | Wheelbase | Track width (front / rear) | Role |
+  |---|---|---|---|
+  | Chevy Spark | ~2.38 m (93.5–93.9 in) | ~1.40–1.50 m | Small end of the range |
+  | Tesla Model Y | ~2.89 m (113.8 in) | ~1.64–1.66 m | Typical crossover |
+  | Tesla Model S | ~2.96 m (116.5 in) | ~1.66–1.70 m | Large sedan |
+  | Mercedes Sprinter | 3.66 m (144 in) or 4.33 m (170 in) | ~1.7 m | Long van: stress-tests the wheelbase prior |
+
+  Values vary by model year, trim and wheels. Measure each vehicle once with a tape measure
+  (wheel center to wheel center along each side for wheelbase, tire-tread center to center
+  across each axle for track width) and record those as the ground truth. Driving these past the
+  camera at GPS-logged speeds tests the estimator twice: once with class priors (pretending we
+  don't know the car), once with the exact dimensions (the §3.6 make/model path).
 - A volunteer drives a known car past the tester at set speeds, logging speed with a phone GPS
   logger (Doppler-derived GPS speed is accurate to ~0.1–0.5 mph at steady speed) and/or an
   OBD-II dongle.
@@ -258,6 +287,59 @@ data-center GPU). It is useful in three places:
   second reference for approaching/receding passes (cosine error makes it read low off-axis).
 - Every test pass is logged (clip + sensor dump + ground truth) into a growing evaluation set.
   Field procedure: [docs/test-protocol.md](docs/test-protocol.md).
+
+### 4.7 Simulation with CARLA
+
+**What it is.** [CARLA](https://carla.org) is an open-source driving simulator from the Computer
+Vision Center (Barcelona) and Intel Labs, built on Unreal Engine and used widely in
+autonomous-driving research. Code is MIT-licensed and assets are CC-BY. A Python API spawns
+vehicles in town and rural maps, drives them on autopilot or along scripted paths at exact
+speeds, and places cameras anywhere. For every frame it outputs RGB plus perfect ground truth:
+instance and semantic segmentation, depth, 2D/3D boxes, each vehicle's pose and velocity, and
+the camera intrinsics. Its vehicle library includes a Tesla Model 3, a Mercedes Sprinter van,
+pickups, compacts, trucks, buses and motorcycles.
+
+**How we'd use it.**
+
+1. **Estimator and tracker regression tests (highest value).** Scripted scenes recreate the
+   app's geometry: a camera at 1.4 m on the roadside of a rural two-lane road, with the Pixel's
+   intrinsics and lens distortion. One or several cars pass in both directions at known speeds,
+   with occlusions. Real **hand motion from our own recordings' IMU logs** is replayed on the
+   simulated camera. The speed error and track-ID mix-ups are then measured exactly, on every
+   code change, across thousands of passes no field session could produce.
+2. **Training data for multi-vehicle detection, segmentation and tracking.** Every frame comes
+   with perfect masks, boxes, keypoints and track IDs at no labeling cost. Synthetic images alone
+   don't transfer perfectly to real video (the "sim-to-real gap": rendering, lighting, sensor
+   noise and plates look different). The established recipe is to **pretrain or mix on synthetic
+   data, then fine-tune on a smaller set of real labeled frames**, with domain randomization
+   (weather, time of day, vehicle colors, camera noise, motion blur) to narrow the gap. We
+   measure the benefit rather than assume it: train with and without CARLA data and compare on
+   held-out *real* Pixel footage.
+3. **Rare and dangerous cases** that are hard to film safely, such as very high speeds, many
+   cars at once, or night and rain.
+
+**Where it runs.** CARLA supports **Linux and Windows with an NVIDIA GPU** (6 GB VRAM minimum,
+8 GB+ recommended). It does not run on macOS, so it can't run on the Mac Studio. Plan: run
+dataset-generation jobs on a rented cloud GPU instance (a few dollars per hour, used in batches)
+and copy the rendered datasets back to the Mac for training. If we only need simple scenes,
+**Blender** (runs natively on Apple Silicon, with Python scripting for exact ground truth) is a
+lighter alternative for rendering on the Mac itself.
+
+**Limits to keep in mind.** CARLA renders with a global shutter by default, so rolling shutter
+must be added in post-processing. US plates must be added as textures. Vehicle variety is
+smaller than real traffic. Simulation supplements real data; it doesn't replace it.
+
+### 4.8 Training on the Mac Studio
+
+- PyTorch's **MPS** backend (Apple GPU) runs fine-tuning for RF-DETR / DEIM-class detectors,
+  keypoint heads and the plate OCR model. Unified memory allows large batches. Expect slower
+  training than a high-end NVIDIA card but no cloud bills for routine runs. A few operations may
+  fall back to CPU; we check this early with a short fine-tuning run in Phase 2.
+- Export: PyTorch → LiteRT (`litert-torch`) → `.tflite`. If any conversion step is Linux-only,
+  run it in CI or Docker. Every exported model is verified against the PyTorch model on a fixed
+  image set before it ships.
+- Datasets and checkpoints live outside git (the Mac, plus an external or cloud backup). The
+  repo holds training code, configs and dataset manifests.
 
 ---
 
@@ -327,7 +409,7 @@ Rationale:
 ### Phase 0 — Feasibility spikes (1–2 weeks)
 
 - [x] Flutter project skeleton + Android native plugin module (`packages/radar_camera`), CI
-      (format, analyze, unit tests, APK build). Platform calls use a plain MethodChannel for
+      (format, analyze, unit tests, APK build) and **GitHub Releases** with the APK. Platform calls use a plain MethodChannel for
       now; move to Pigeon when the API grows.
 - [x] **Recorder app**: Camera2 capture with EIS off and zoom locked at 1.0, H.264 + AAC
       recording with boot-clock timestamps, per-frame capture metadata (`frames.jsonl`),
@@ -355,7 +437,10 @@ Rationale:
 - [ ] Speed estimator v1: ground-plane range + box-based wheelbase heuristic + class length
       priors; constant-velocity fit; error budget; overlay `speed ± error`.
 - [ ] Desktop replay harness (Python + pybind11) for recorded clips.
-- [ ] CARLA scene generator for side-of-road passes with known speeds; estimator regression test.
+- [ ] CARLA scene generator (cloud GPU) for side-of-road passes with known speeds, replaying real
+      IMU hand motion; estimator and tracker regression tests (§4.7).
+- [ ] Owner's test fleet: measure wheelbase and track width of all four vehicles; GPS-logged
+      drive-bys at 20–45 mph.
 - [ ] First real-world ground-truth session (GPS-logged drive-bys at 20/25/30/35/40 mph).
 
 **Exit:** median error and 95 % error band measured against ground truth; we know which cue limits
@@ -363,13 +448,15 @@ accuracy.
 
 ### Phase 2 — Custom model: keypoints and plates (4–6 weeks)
 
+- [ ] Short MPS fine-tuning smoke test on the Mac Studio (§4.8); CARLA synthetic set and a
+      with/without-synthetic comparison on real footage.
 - [ ] Labeling pipeline (CVAT/Label Studio) with SAM 3 / SAM 2 pre-labeling; label own footage +
       subsets of public data.
 - [ ] Review SAM 3 license terms for use as an internal labeling tool.
 - [ ] Fine-tune detector with vehicle subclasses + `plate`; train keypoint head (wheel contacts,
       lights, plate corners).
 - [ ] Plate OCR: fast-plate-ocr fine-tuned on US plates; per-character confidence.
-- [ ] Estimator v2: fuse plate, wheelbase, light spacing and ground-plane cues per frame.
+- [ ] Estimator v2: fuse plate, wheelbase, track width, light spacing and ground-plane cues per frame.
 - [ ] Quantize (FP16/INT8) and re-profile; target ≥20 fps live on the Pixel 10 Pro.
 
 **Exit:** meets the accuracy target from §2 on the evaluation set for side-view passes.

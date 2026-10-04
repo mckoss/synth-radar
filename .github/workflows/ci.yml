@@ -1,9 +1,27 @@
 name: CI
 
+# Every push and pull request: Python tool tests, Flutter analyze/test, APK build.
+# Pushes to main, version tags (v*) and manual runs also publish a GitHub Release
+# with the APK attached. See docs/releases.md.
+
 on:
   push:
+    branches: ["**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a GitHub Release with the APK"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   tools:
@@ -18,6 +36,9 @@ jobs:
 
   android:
     runs-on: ubuntu-latest
+    env:
+      BUILD_NUMBER: ${{ github.run_number }}
+      BUILD_NAME: 0.1.${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -29,11 +50,13 @@ jobs:
           flutter-version: 3.47.6
           channel: stable
           cache: true
+
       - name: Analyze plugin
         working-directory: packages/radar_camera
         run: |
           flutter pub get
           flutter analyze
+
       - name: Analyze and test app
         working-directory: app
         run: |
@@ -41,10 +64,60 @@ jobs:
           dart format --output=none --set-exit-if-changed lib test
           flutter analyze
           flutter test
+
+      - name: Release signing key
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret: APK is signed with a throwaway debug key. Installing a later build will require uninstalling (which deletes recordings). See docs/releases.md."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > app/android/release.jks
+          cat > app/android/key.properties <<PROPS
+          storeFile=release.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}
+          PROPS
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
       - name: Build APK (arm64)
         working-directory: app
-        run: flutter build apk --release --target-platform android-arm64
+        run: |
+          flutter build apk --release --target-platform android-arm64 \
+            --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
+          mkdir -p ../dist
+          cp build/app/outputs/flutter-apk/app-release.apk "../dist/synth-radar-$BUILD_NAME.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk ../dist/synth-radar.apk
+
       - uses: actions/upload-artifact@v4
         with:
-          name: synth-radar-recorder-apk
-          path: app/build/app/outputs/flutter-apk/app-release.apk
+          name: synth-radar-${{ env.BUILD_NAME }}
+          path: dist/synth-radar-${{ env.BUILD_NAME }}.apk
+
+      - name: Publish GitHub Release
+        if: >-
+          github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+          || github.event_name == 'workflow_dispatch' && inputs.release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('build-{0}', github.run_number) }}
+          target_commitish: ${{ github.sha }}
+          name: Synth Radar ${{ env.BUILD_NAME }} (${{ github.ref_name }})
+          # Builds from branches other than main are pre-releases, so the
+          # "latest" download link always points at main.
+          prerelease: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v') }}
+          body: |
+            Android APK for the Pixel 10 Pro (arm64), built from `${{ github.ref_name }}` at ${{ github.sha }}.
+
+            Install: download **synth-radar.apk** on the phone and open it.
+            Signing: ${{ steps.signing.outputs.signed == 'true' && 'release key (installs over earlier builds)' || 'temporary debug key: uninstall the previous build first, which deletes its recordings' }}.
+          files: |
+            dist/synth-radar.apk
+            dist/synth-radar-${{ env.BUILD_NAME }}.apk
