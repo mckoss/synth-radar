@@ -1,0 +1,6 @@
+# Recordings and datasets never go in git (large, and contain other people's plates).
+data/
+*.apk
+__pycache__/
+*.pyc
+.DS_Store

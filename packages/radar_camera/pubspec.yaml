@@ -1,0 +1,24 @@
+name: radar_camera
+description: "Measurement camera for Synth Radar: Camera2 capture with lens metadata, IMU logging and recording."
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.5
+  flutter: '>=3.27.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.mckoss.synthradar.radar_camera
+        pluginClass: RadarCameraPlugin

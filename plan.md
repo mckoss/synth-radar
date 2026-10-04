@@ -248,8 +248,16 @@ data-center GPU). It is useful in three places:
 - A volunteer drives a known car past the tester at set speeds, logging speed with a phone GPS
   logger (Doppler-derived GPS speed is accurate to ~0.1–0.5 mph at steady speed) and/or an
   OBD-II dongle.
-- Optional: an inexpensive handheld radar gun as a second reference.
+- **Timing gates beside the road (no equipment needed):** two gates a measured distance apart
+  (e.g. 20 m), each marked by a pair of markers directly across the road from each other at
+  the pavement edges. In the image, the line between a gate's two markers is that gate's
+  ground line, so the frame where a tire crosses it is exact (no parallax). Speed = spacing ÷
+  elapsed time, about ±1 % at 60 fps. Works for any passing car, and the four markers double as
+  the known-distance scene calibration of §3.6.
+- Optional: an inexpensive handheld radar gun (e.g. Bushnell Velocity, ~$90–150, ±1 mph) as a
+  second reference for approaching/receding passes (cosine error makes it read low off-axis).
 - Every test pass is logged (clip + sensor dump + ground truth) into a growing evaluation set.
+  Field procedure: [docs/test-protocol.md](docs/test-protocol.md).
 
 ---
 
@@ -318,15 +326,25 @@ Rationale:
 
 ### Phase 0 — Feasibility spikes (1–2 weeks)
 
-- [ ] Flutter project skeleton + Android native plugin module, Pigeon API, CI (format, analyze,
-      unit tests, Android build).
+- [x] Flutter project skeleton + Android native plugin module (`packages/radar_camera`), CI
+      (format, analyze, unit tests, APK build). Platform calls use a plain MethodChannel for
+      now; move to Pigeon when the API grows.
+- [x] **Recorder app**: Camera2 capture with EIS off and zoom locked at 1.0, H.264 + AAC
+      recording with boot-clock timestamps, per-frame capture metadata (`frames.jsonl`),
+      ≥200 Hz IMU log, per-pass annotation (direction, vehicle, ground truth, geometry), share.
+- [x] Bundle checker (`tools/inspect_recording.py`) and lens math mapping Camera2 intrinsics
+      into video pixels (`tools/synthradar/lens.py`).
+- [x] Field test protocol with ground-truth options ([docs/test-protocol.md](docs/test-protocol.md)).
+- [ ] Install on the Pixel 10 Pro and verify on device (preview orientation, recording,
+      bundle passes `inspect_recording.py`).
 - [ ] Dump Pixel 10 Pro `CameraCharacteristics` for every camera ID; confirm intrinsics,
       distortion, rolling-shutter skew, EIS control, and 4K30 / 1080p60 availability.
-- [ ] Checkerboard calibration with OpenCV to verify the published intrinsics.
+- [ ] Checkerboard calibration with OpenCV to verify the published intrinsics
+      (`tools/calibrate_checkerboard.py`).
 - [ ] Confirm gyro and frame timestamps share a clock (`SENSOR_INFO_TIMESTAMP_SOURCE`).
 - [ ] Run RF-DETR Nano LiteRT sample on the Pixel 10 Pro; measure latency on CPU / GPU / NPU
       delegates at 384, 512 and 640 input.
-- [ ] Record a first batch of raw test clips with sensor logs.
+- [ ] Record a first batch of test passes with sensor logs and ground truth.
 
 **Exit:** we know the achievable fps and that the lens/IMU data are trustworthy.
 

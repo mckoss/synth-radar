@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.CAMERA" />
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
+  <!-- Sensor rates above 200 Hz (gyroscope for camera-rotation compensation). -->
+  <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+  <uses-feature android:name="android.hardware.camera" android:required="true" />
+</manifest>
