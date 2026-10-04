@@ -26,6 +26,7 @@ class _RecordPageState extends State<RecordPage> with WidgetsBindingObserver {
   bool _busy = false;
   int _rotationOffset = 0;
   double _zoom = 1.0;
+  bool _ois = true;
   Map<String, dynamic> _status = const {};
   StreamSubscription<Map<String, dynamic>>? _events;
   PassNotes _lastNotes = PassNotes();
@@ -95,7 +96,12 @@ class _RecordPageState extends State<RecordPage> with WidgetsBindingObserver {
     final mode = _mode;
     if (cam == null || mode == null) return;
     try {
-      final p = await RadarCamera.open(cam.id, mode, zoomRatio: _zoom);
+      final p = await RadarCamera.open(
+        cam.id,
+        mode,
+        zoomRatio: _zoom,
+        opticalStabilization: _ois,
+      );
       if (mounted) {
         setState(() {
           _preview = p;
@@ -167,6 +173,15 @@ class _RecordPageState extends State<RecordPage> with WidgetsBindingObserver {
     if (_recording || z == _zoom) return;
     setState(() {
       _zoom = z;
+      _preview = null;
+    });
+    await _open();
+  }
+
+  Future<void> _toggleOis(bool on) async {
+    if (_recording || on == _ois) return;
+    setState(() {
+      _ois = on;
       _preview = null;
     });
     await _open();
@@ -300,6 +315,16 @@ class _RecordPageState extends State<RecordPage> with WidgetsBindingObserver {
                       : (_) => _changeZoom(z),
                 ),
             ],
+          ),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Optical stabilization',
+              style: TextStyle(fontSize: 12),
+            ),
+            value: _ois,
+            onChanged: _recording || _busy ? null : _toggleOis,
           ),
           for (final w in _warnings)
             Padding(

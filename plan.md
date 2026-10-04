@@ -1,7 +1,7 @@
 # Synth Radar — Project Plan
 
 An on-device, camera-based vehicle speed estimator used like a radar gun. A pedestrian on the
-shoulder of a road braces a phone and points it up or down the road at a car approaching or
+shoulder of a road holds up a phone, casually and without a tripod, and points it up or down the road at a car approaching or
 driving away at an oblique angle. The app detects and tracks each vehicle, estimates its
 speed with an explicit error band, reads its license plate when it can, saves a short evidence
 clip, and helps the user send a report (email/share) to a chosen recipient.
@@ -20,9 +20,10 @@ clip, and helps the user send a report (email/share) to a chosen recipient.
 |---|---|
 | UI framework | Flutter (Dart) |
 | First platform | Android, Pixel 10 Pro |
-| Capture posture | **Radar-gun style:** pedestrian on the shoulder, phone **braced** (or handheld), pointed along the road at a car **approaching or receding at an oblique angle**. Side-on crossing views are a secondary case: from the shoulder the camera can't fit a passing car side-on |
+| Capture posture | **Radar-gun style:** pedestrian on the shoulder, phone **held casually by hand** (bracing is optional, never required), pointed along the road at a car **approaching or receding at an oblique angle**. Side-on crossing views are a secondary case: from the shoulder the camera can't fit a passing car side-on |
 | Lenses | 1× main camera at 4K for near/medium range; **5× telephoto** (Pixel 10 Pro) for distant approaching cars, five times the pixels on target |
 | Compute | On-device only for capture and speed estimation |
+| Stabilization | Phone's electronic stabilization **off**; camera motion compensated in software from the gyro, accelerometer and background tracking (§3.3). Optical stabilization (OIS) on or off decided by Phase 0 tests |
 | Scale cues | **Track width** (left–right wheel spacing), **license plate size**, headlight/taillight spacing, ground plane (phone height), plus wheelbase in oblique views and make/model when known |
 | Licenses | Permissive only (Apache-2.0 is fine) — rules out Ultralytics YOLOv5/v8/11 (AGPL) and YOLOv9 reference code (GPL) |
 | Real-time | Live on-screen estimate is desired; a more accurate offline re-analysis of saved clips is acceptable |
@@ -98,8 +99,11 @@ What this means for accuracy:
   give range proportional to the assumed size. Over an approach from 80 m to 15 m the two
   curves only agree for one vehicle size and one small camera-pitch bias, so a joint fit can
   estimate the car's true size. This needs a flat road and a known phone height; testing it is a
-  Phase 1 research item. A braced phone at a measured height (monopod, fence post, car roof)
-  makes the height known.
+  Phase 1 research item. The phone's height is uncertain for casual handheld use
+  (~1.3–1.6 m), so the joint fit treats it as an unknown with its own prior. The fit then
+  combines two independent priors (vehicle size and phone height), which is tighter than either
+  alone, and it still estimates the pitch bias. Entering your own eye height once in settings
+  tightens it further.
 
 ### 3.2 Scale cues, best to worst
 
@@ -108,7 +112,7 @@ What this means for accuracy:
 | **Track width** (left–right wheel–ground contacts) | Most cars/SUVs/pickups/vans 1.55–1.75 m; subcompacts ~1.40–1.50 m | ±5–6 % by class, ~±1 % if make/model known | **Primary cue:** front/rear views, i.e. every approaching or receding car |
 | **License plate** (width and height) | US: 305 × 152 mm (standardized) | ~1–2 % physical; pixel bias dominates at range (see §3.1 table) | Rear plate on every receding car. Front plate only in states that require one (about 20 US states are rear-plate-only) |
 | **Headlight / taillight spacing** | ~1.2–1.6 m by class | ±10–15 % | Front/rear views; lights are high-contrast, so they're also easy to find at night |
-| **Ground plane** (phone height + gravity) | Phone ~1.3–1.6 m above road (exact if braced at a measured height); gravity from IMU | Range from the downward angle to the tire contacts; error grows with range | Whenever the tires are visible; size-independent, enables the self-calibration in §3.1 |
+| **Ground plane** (phone height + gravity) | Phone ~1.3–1.6 m above road (prior from the user's height, entered once); gravity from IMU | Range from the downward angle to the tire contacts; error grows with range | Whenever the tires are visible; size-independent, enables the self-calibration in §3.1 |
 | **Wheelbase** (front/rear wheel–ground contact points) | Class prior: compact ~2.6 m, sedan ~2.8 m, SUV/pickup ~2.9–3.6 m | ±5–10 % by class; ~±1 % if make/model is known | Oblique views where both wheels on the near side are visible (foreshortened); side-on crossing views |
 | **Overall length / height** | Class prior | ±10–20 % | Always, but bounding boxes are sloppy |
 | **Make/model → spec sheet** | Exact wheelbase/length | ~1 % | User picks make/model in review (§3.6) now; automatic classifier later |
@@ -149,18 +153,54 @@ about ±5–7 %. Pickups and vans spread much wider. Two things tighten it:
 - **Knowing the make/model** pins it to ~1 %. The user can supply this in review (§3.6); an
   automatic make/model classifier is a later addition.
 
-### 3.3 Camera motion (braced or handheld)
+### 3.3 Camera motion: casual handheld use
 
-The phone is normally braced like a radar gun, but it still moves a little, and handheld use
-must work too. The user may also pan slightly to keep an approaching car centered (much less
-than for a crossing car). That rotation must not be mistaken for car motion. It matters most
-for the ground-plane cue, where 0.1° of pitch error is ~4 % of range at 30 m.
+Design for an ordinary user: phone **held casually in one or two hands, not braced**, drifting,
+shaking slightly, and panning a little to keep the car in view. Bracing is a bonus, never a
+requirement. The phone's own stabilization is **off** (electronic stabilization crops and warps
+frames unpredictably), and all compensation happens in our software, where we know exactly what
+was done.
 
-- Read the **gyroscope** at high rate (≥200 Hz) and integrate orientation, synchronized to frame
-  `SENSOR_TIMESTAMP`s (same clock base on Pixel; verify in Phase 0).
-- Express every bearing in a **gravity-aligned world frame**, so panning cancels out.
-- Optionally refine with background feature tracking (static scene points) to correct gyro drift.
-- Translation of the handheld phone (a few cm of hand shake) is negligible at 10–30 m.
+**What hand motion does to each measurement.** Rough numbers for the Pixel at 4K: 1° of rotation
+moves the image ~46 px at 1× and ~210 px at 5×. Casual hand shake is ~1–3°/s; drifting and
+re-aiming reaches 10–30°/s.
+
+| Effect | Impact | Compensation |
+|---|---|---|
+| **Rotation** changes where the car appears | Shifts bearings. Harmless for size-based range, but the ground-plane cue (downward angle to the tires) is very sensitive: 0.1° of pitch error ≈ 4 % of range at 30 m | Gyro-integrated orientation, refined visually (below), expressed in a gravity-aligned world frame |
+| **Rolling shutter** (rows read out over ~10–20 ms) | Rotating during readout shears the frame: at 10°/s and 15 ms, ~7 px at 1×, ~30 px at 5× | Per-row rotation from the gyro (each row has its own timestamp) |
+| **Translation** (body sway, a step) | Phone motion toward or away from the car adds directly to the measured speed. Sway is a few cm/s (≈0.1 mph) and averages out over a 2–3 s fit; **walking (~3 mph) does not** | Accelerometer step/walk detection: warn "stand still" and drop or flag those frames |
+| **Motion blur** | Smears tire and plate edges, biasing keypoints | Short exposures (≤2–4 ms in daylight; cap shutter time in Phase 1); optical stabilization (below); keypoints weighted by sharpness |
+| **Optical stabilization (OIS)** | Cancels shake (less blur), but shifts the image by up to tens of pixels, which corrupts angles unless the shift is known | Use the per-frame OIS shift samples where the phone reports them; Phase 0 compares OIS on vs. off (the recorder has a switch) |
+| **Car leaves the frame** | Casual aiming loses the car, especially at 5× | Track through brief exits; live framing guide; suggest 1× unless the user is steady |
+
+Useful property: **the primary scale cues are nearly immune to rotation.** A car's track width
+or plate width in pixels barely changes when the camera turns, and a horizontal width is
+measured within the same few rows, so rolling-shutter shear hardly affects it either. Rotation
+matters for the ground-plane cue and for the car's sideways position, which is a small part of
+its motion in this geometry.
+
+**Compensation pipeline:**
+
+1. **Gyroscope** at ≥200 Hz (the Pixel delivers ~400 Hz), on the same clock as the frame
+   timestamps (verified in Phase 0). Integrate to an orientation per **image row**.
+2. **Online calibration** of gyro bias and the gyro-to-camera time offset (a few ms matters at
+   30°/s), from the motion of the background.
+3. **Visual refinement:** track static background features (road edges, trees, signs), with
+   vehicle pixels masked out, and fuse them with the gyro, a small visual-inertial filter for
+   rotation only. This removes gyro drift and catches OIS shifts the phone doesn't report.
+4. **Gravity alignment** from the accelerometer (averaged while the phone is roughly still)
+   gives the true horizon and pitch, which the ground-plane cue needs.
+5. **Quality gating:** frames with very fast rotation, heavy blur, or gyro/visual disagreement
+   get less weight or are dropped. The error band widens honestly instead of the estimate
+   silently degrading.
+6. **Live feedback:** a small steadiness indicator and framing guide on screen. Advice, not a
+   requirement.
+
+The recorder already logs everything this needs: gyro, accelerometer, gravity and rotation
+vectors, per-frame rolling-shutter skew, exposure, OIS mode and OIS samples (where available).
+`tools/inspect_recording.py` reports each recording's rotation rates and rolling-shutter smear,
+so the first field recordings tell us how much motion real casual use involves.
 
 ### 3.4 Camera and lens model (no external database needed)
 
@@ -473,6 +513,9 @@ Rationale:
 - [ ] Checkerboard calibration with OpenCV to verify the published intrinsics
       (`tools/calibrate_checkerboard.py`).
 - [ ] Confirm gyro and frame timestamps share a clock (`SENSOR_INFO_TIMESTAMP_SOURCE`).
+- [ ] Measure real casual-handheld motion (rotation rates, rolling-shutter smear, sway) from the
+      first recordings. Compare OIS on vs. off, and check whether the Pixel reports OIS shift
+      samples.
 - [ ] Run RF-DETR Nano LiteRT sample on the Pixel 10 Pro; measure latency on CPU / GPU / NPU
       delegates at 384, 512 and 640 input.
 - [ ] Record a first batch of test passes with sensor logs and ground truth.
@@ -482,7 +525,10 @@ Rationale:
 ### Phase 1 — Live detection, tracking and first speed estimate (3–4 weeks)
 
 - [ ] Native capture pipeline → detector → tracker → overlay in Flutter (boxes + track IDs).
-- [ ] `core/` C++ library: lens model, gyro orientation, world-frame bearings, tracker.
+- [ ] `core/` C++ library: lens model, per-row gyro orientation with bias and time-offset
+      calibration, gravity alignment, world-frame bearings, tracker.
+- [ ] Visual rotation refinement from background features (vehicles masked out); walk
+      detection; quality gating of shaky or blurred frames (§3.3).
 - [ ] Speed estimator v1 for approaching/receding cars: range from box width (class width prior)
       and ground plane; constant-velocity fit of 3D position; error budget; overlay
       `speed ± error`. Try the scale/ground-plane joint fit (§3.1 self-calibration).

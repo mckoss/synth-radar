@@ -55,6 +55,7 @@ class CameraController(
     var height = 1080; private set
     var fps = 30; private set
     var zoomRatio = 1.0f; private set
+    var opticalStabilization = true; private set
 
     private var recording: Recording? = null
     private val sensorLogger = SensorLogger(sensorManager)
@@ -79,7 +80,14 @@ class CameraController(
 
     /** Opens the camera and starts the preview. Returns texture and orientation info. */
     @SuppressLint("MissingPermission")
-    fun open(id: String, width: Int, height: Int, fps: Int, zoomRatio: Float): Map<String, Any?> {
+    fun open(
+        id: String,
+        width: Int,
+        height: Int,
+        fps: Int,
+        zoomRatio: Float,
+        opticalStabilization: Boolean,
+    ): Map<String, Any?> {
         close()
         cameraId = id
         characteristics = manager.getCameraCharacteristics(id)
@@ -87,6 +95,7 @@ class CameraController(
         this.height = height
         this.fps = fps
         this.zoomRatio = zoomRatio
+        this.opticalStabilization = opticalStabilization
         // Texture registration must happen on the platform (main) thread.
         val p = runOnMain { textures.createSurfaceProducer() }
         p.setSize(PREVIEW_W, PREVIEW_H)
@@ -230,6 +239,7 @@ class CameraController(
                 .put("file", "video.mp4")
                 .put("width", width).put("height", height).put("fps", fps)
                 .put("zoomRatio", zoomRatio.toDouble())
+                .put("opticalStabilization", opticalStabilization)
                 .put("mime", rec.writer.videoMime).put("bitrate", rec.writer.videoBitrate)
                 .put("ptsClock", "elapsedRealtime (boot time), microseconds"))
             .put("audio", JSONObject()
@@ -320,11 +330,15 @@ class CameraController(
             CameraMetadata.CONTROL_VIDEO_STABILIZATION_MODE_OFF,
         )
         val ois = c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION)
-        if (ois?.contains(CameraMetadata.LENS_OPTICAL_STABILIZATION_MODE_ON) == true) {
-            b.set(
-                CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
-                CameraMetadata.LENS_OPTICAL_STABILIZATION_MODE_ON,
-            )
+        // OIS reduces blur from hand shake but shifts the image by up to tens of pixels;
+        // its per-frame shift is logged (STATISTICS_OIS_SAMPLES) where supported.
+        val oisMode = if (opticalStabilization) {
+            CameraMetadata.LENS_OPTICAL_STABILIZATION_MODE_ON
+        } else {
+            CameraMetadata.LENS_OPTICAL_STABILIZATION_MODE_OFF
+        }
+        if (ois?.contains(oisMode) == true) {
+            b.set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE, oisMode)
         }
         if (Build.VERSION.SDK_INT >= 30) {
             b.set(CaptureRequest.CONTROL_ZOOM_RATIO, zoomRatio)

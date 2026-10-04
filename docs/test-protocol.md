@@ -99,8 +99,8 @@ in the scene, which is the "known distance" calibration from plan §3.6.
 - Radar measures only the part of the speed directed toward it, so it reads low when not aimed
   along the direction of travel. That's about 2% low at 11° off and 3.4% low at 15°. From the
   shoulder the angle is small for distant cars, and we can correct it using the app's 3D track.
-- Handling a radar gun and a phone at once is awkward. Brace the phone on something (a monopod
-  or tripod is ideal) and hold the radar gun next to it. Say the radar reading out loud: the
+- Handling a radar gun and a phone at once is awkward: hold the phone in one hand and the radar
+  in the other, or have a helper work the radar. Say the radar reading out loud: the
   recording's audio captures it, and you can type it in the notes afterwards.
 
 ### D. No ground truth
@@ -110,8 +110,8 @@ estimate. Set the source to **None**.
 
 ## 5. The passes
 
-The main use case is **radar-gun style**: you stand on the shoulder with the phone braced, pointed
-along the road at a car **coming toward you** or **driving away** after it passes, at a slight
+The main use case is **radar-gun style, handheld**: you stand on the shoulder holding the phone
+**casually, the way anyone would**, and point it along the road at a car **coming toward you** or **driving away** after it passes, at a slight
 angle because you're off to the side of its lane.
 
 Record each car as **one recording**. Start when the car first appears in the distance, and stop
@@ -121,9 +121,14 @@ the pass. Fill in the direction, vehicle type, ground truth (if any), and your p
 distance from the lane. The app remembers these between passes, so usually you only change one or
 two fields.
 
-**Brace the phone** like you'd hold a radar gun steady: against a fence post, a car roof or a
-mailbox, or on a monopod or tripod. If you can, use a support of a known height and enter it as
-the phone height. Knowing that height exactly gives an extra measurement of range.
+**Hold the phone casually.** Don't brace it or try to be extra steady. The app has to cope with
+ordinary hand motion, so that's what we need to record. Electronic stabilization is always off,
+and the motion is corrected in software later from the gyro log. A few braced passes are useful
+only for comparison.
+
+**Optical stabilization:** leave it **on** for most passes, and record a few matched pairs with it
+**off** (the switch is in the Record panel). That tells us whether the lens's own stabilizer helps
+or hurts the measurements.
 
 **Lens:** use **1×** for cars within about 50 m and **5×** to start measuring them farther out.
 The zoom buttons are under the video-mode menu. Pick the lens before you start recording: the
@@ -137,9 +142,11 @@ measurements. Do a few in **1080p60** for comparison.
 | 1–2 | Shoulder, 2–4 m off the pavement edge, looking up the road | Approaching in the near lane | 1× | **The main use case.** Keep the whole car, all four tires if possible, in view |
 | 3–4 | Same spot, turned around | Receding in the near lane | 1× | Rear plate always visible |
 | 5–6 | Same spot | Approaching / receding in the **far** lane | 1× | Larger angle; tests the oblique geometry |
-| 7–8 | Same spot | Approaching from far away | 5× | Start the recording when the car is 100–150 m out |
+| 7–8 | Same spot | Approaching from far away | 5× | Start the recording when the car is 100–150 m out; harder to keep framed by hand, which is useful to know |
 | 9 | Same spot | Pass-by: record the approach, the pass and the recession in one clip | 1× | Useful later for Doppler audio |
-| 10+ | Repeat at different speeds, both lanes, 1080p60, handheld vs braced | Any | Any | More variety means a better test |
+| 10–11 | Same spot | Approaching, optical stabilization **off** | 1× | Pair with passes 1–2 |
+| 12–13 | Same spot | Approaching, phone braced (post, car roof) | 1× | Comparison only: how much does hand motion cost? |
+| 14+ | Repeat at different speeds, both lanes, 1080p60 | Any | Any | More variety means a better test |
 
 Six passes is a good first session. Around 20 gives the first useful accuracy numbers. If several
 cars are in view, that's fine, just choose **Multiple vehicles**.
@@ -151,8 +158,7 @@ Tips:
 - **Bright daylight is best for now.** The status panel warns when exposure is longer than
   4 ms, which blurs moving cars.
 - **Measure your distance to the lane center once per spot.** Pace it out, or better, use a tape
-  measure. Enter your phone height (chest height is about 1.3–1.5 m; use the support's height if
-  braced).
+  measure. Enter your phone height (chest-to-eye height, about 1.3–1.6 m).
 - If something odd happens, like a lens switch, a dropped recording or a car stopping, add a note
   rather than deleting the recording.
 

@@ -11,6 +11,7 @@ tester's notes. Exits non-zero if any bundle has a blocking problem.
 
 from __future__ import annotations
 
+import math
 import statistics
 import sys
 from pathlib import Path
@@ -176,6 +177,25 @@ def inspect(path: str) -> int:
             ghz = (len(gyro) - 1) / ((gyro[-1] - gyro[0]) / 1e9)
             if ghz < 150:
                 warnings.append(f"gyro rate only {ghz:.0f} Hz")
+            # How much the phone rotated while the video was recorded.
+            rates = [
+                math.degrees(math.sqrt(sum(v * v for v in smp.values[:3])))
+                for smp in b.imu_of("gyro")
+                if ts[0] <= smp.t_ns <= ts[-1]
+            ]
+            if rates:
+                rates.sort()
+                p95 = rates[int(0.95 * (len(rates) - 1))]
+                print(
+                    f"  camera rotation: median {statistics.median(rates):.1f}°/s, "
+                    f"95th percentile {p95:.1f}°/s, max {rates[-1]:.1f}°/s"
+                )
+                skew_ms = (statistics.median(skew) / 1e6) if skew else 0
+                if skew_ms:
+                    print(
+                        f"  rolling-shutter smear at 95th-percentile rotation: "
+                        f"{p95 * skew_ms / 1000:.3f}° across the frame"
+                    )
     else:
         problems.append("imu.csv missing or empty")
 

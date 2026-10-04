@@ -96,11 +96,13 @@ class RadarCamera {
       }))!;
 
   /// Opens the preview. [zoomRatio] is held fixed for the whole session; on the
-  /// Pixel 10 Pro, 5.0 selects the 5x telephoto lens.
+  /// Pixel 10 Pro, 5.0 selects the 5x telephoto lens. Electronic stabilization
+  /// is always off; [opticalStabilization] controls the lens's own OIS.
   static Future<PreviewInfo> open(
     String cameraId,
     VideoMode mode, {
     double zoomRatio = 1.0,
+    bool opticalStabilization = true,
   }) async {
     final m = await _channel.invokeMapMethod<String, dynamic>('open', {
       'cameraId': cameraId,
@@ -108,6 +110,7 @@ class RadarCamera {
       'height': mode.height,
       'fps': mode.fps,
       'zoomRatio': zoomRatio,
+      'opticalStabilization': opticalStabilization,
     });
     return PreviewInfo(m!);
   }
